@@ -1,3 +1,4 @@
+//C:\Users\Admin\Downloads\DUANWEB(1)\server\models\employeeModel.js
 const db = require('../config/db.config');
 
 const employeeModel = {
