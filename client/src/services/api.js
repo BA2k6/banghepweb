@@ -201,15 +201,6 @@ export const createEmployee = async (empData) => {
     }
 };
 
-export const getProducts = async () => {
-    try {
-        const response = await api.get('/products');
-        return response.data;
-    } catch (error) {
-        throw error.response?.data || { message: 'Lỗi tải sản phẩm.' };
-    }
-};
-
 
 
 export const getOrders = async () => {
@@ -250,7 +241,21 @@ export const getDashboardCurrentStats = async () => {
 };
 
 
+// [ĐÃ SỬA]: Thêm tham số categoryId vào hàm
+export const getProducts = async (categoryId) => {
+    try {
+        // Tạo object params để gửi query string (VD: ?category_id=1)
+        const params = {};
+        if (categoryId && categoryId !== 'all') {
+            params.category_id = categoryId;
+        }
 
+        const response = await api.get('/products', { params });
+        return response.data;
+    } catch (error) {
+        throw error.response?.data || { message: 'Lỗi tải sản phẩm.' };
+    }
+};
 
 export const getProduct = async (id) => {
     const response = await api.get(`/products/${id}`);
@@ -276,7 +281,6 @@ export const deleteProduct = async (id) => {
     return response.data;
 };
 
-// MỚI THÊM: Hàm lấy Danh mục (Fix lỗi ShopScreen)
 export const getCategories = async () => {
     const response = await api.get('/categories');
     if (response.status !== 200) throw response.data || { message: 'Lỗi tải danh mục.' };
