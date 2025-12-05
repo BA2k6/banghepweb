@@ -23,6 +23,8 @@ import { AboutScreen } from './pages/AboutScreen';
 import { ContactScreen } from './pages/ContactScreen';
 import ProductDetail from "./pages/ProductDetail";
 import { ProfileScreen } from './pages/ProfileScreen';
+import { OrderCreateScreen } from './pages/OrderCreateScreen';
+
 // Component Chứa Nội dung chính
 const AppContent = ({ path, setPath, currentUser, userRoleName, onRefreshUser,refreshKey }) => {
     
@@ -53,14 +55,21 @@ const AppContent = ({ path, setPath, currentUser, userRoleName, onRefreshUser,re
     
 
     switch (path) {
+
         case '/dashboard': return <DashboardScreen />;
-        case '/products': return <ProductsScreen userRoleName={userRoleName} />;
-        case '/customers': return <CustomersScreen key={refreshKey} userRoleName={userRoleName} />;
-        case '/orders': return <OrdersScreen currentUserId={currentUser?.id} userRoleName={userRoleName} />;
-        case '/stockin': return <StockInScreen userRoleName={userRoleName} />;
-        case '/users': return <UsersScreen key={refreshKey} currentUser={currentUser} />;
-        case '/employees': return <EmployeesScreen key={refreshKey} />; 
-        case '/salaries': return <SalariesScreen userRoleName={userRoleName} />;
+        case '/products': return <ProductsScreen userRoleName={userRoleName} setPath={setPath} />; // Cần setPath nếu có nút Tạo/Sửa SP
+        case '/customers': return <CustomersScreen key={refreshKey} userRoleName={userRoleName} setPath={setPath} />; // Cần setPath
+        // 💡 ĐIỂM SỬA CHÍNH: BỔ SUNG setPath cho OrdersScreen
+        case '/orders': 
+            return <OrdersScreen 
+                currentUserId={currentUser?.id} 
+                userRoleName={userRoleName} 
+                setPath={setPath} // <<< BỔ SUNG setPath
+            />;
+        case '/stockin': return <StockInScreen userRoleName={userRoleName} setPath={setPath} />; // Cần setPath
+        case '/users': return <UsersScreen key={refreshKey} currentUser={currentUser} setPath={setPath} />; // Cần setPath
+        case '/employees': return <EmployeesScreen key={refreshKey} setPath={setPath} />; // Cần setPath
+        case '/salaries': return <SalariesScreen userRoleName={userRoleName} setPath={setPath} />; // Cần setPath
         
         case '/unauthorized': return <UnauthorizedScreen setPath={setPath} />;
         case '/about': return <AboutScreen setPath={setPath} />;
@@ -68,7 +77,26 @@ const AppContent = ({ path, setPath, currentUser, userRoleName, onRefreshUser,re
         case '/profile': 
             return <ProfileScreen currentUser={currentUser} setPath={setPath} onRefreshUser={onRefreshUser} />;
 
-        default: return null;
+        default: 
+        // [CẢNH BÁO] Nếu path là /orders/create hoặc /orders/edit/XXX, nó sẽ rơi vào đây (default).
+        // Cần thêm các case cho các route con!
+        
+        // --- BỔ SUNG: Xử lý các route con của Đơn hàng ---
+        if (path.startsWith('/orders/create')) {
+             // Giả định bạn đã import OrderCreateScreen
+             // Import OrderCreateScreen ở đầu file: import { OrderCreateScreen } from './pages/OrderCreateScreen';
+             // Nếu OrderCreateScreen có trong file của bạn (bạn chưa gửi toàn bộ imports), bạn cần thêm nó vào:
+             return <OrderCreateScreen currentUser={currentUser} setPath={setPath} />;
+        }
+        if (path.startsWith('/orders/')) {
+             const parts = path.split('/');
+             const orderId = parts[2]; // /orders/{id}/edit
+             if (parts.length === 4 && parts[3] === 'edit') {
+                 // Giả định bạn có OrderEditScreen
+                 // import { OrderEditScreen } from './pages/OrderEditScreen';
+                 return <OrderEditScreen orderId={orderId} currentUser={currentUser} setPath={setPath} />;
+             }
+        }
     }
 };
 

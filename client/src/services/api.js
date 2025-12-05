@@ -203,15 +203,6 @@ export const createEmployee = async (empData) => {
 
 
 
-export const getOrders = async () => {
-    try {
-        const response = await api.get('/orders');
-        return response.data;
-    } catch (error) {
-        throw error.response?.data || { message: 'Lỗi tải đơn hàng.' };
-    }
-};
-
 
 export const getStockInReceipts = async () => {
     try {
@@ -242,12 +233,15 @@ export const getDashboardCurrentStats = async () => {
 
 
 // [ĐÃ SỬA]: Thêm tham số categoryId vào hàm
-export const getProducts = async (categoryId) => {
+export const getProducts = async (categoryId, searchTerm) => {
     try {
-        // Tạo object params để gửi query string (VD: ?category_id=1)
         const params = {};
         if (categoryId && categoryId !== 'all') {
             params.category_id = categoryId;
+        }
+        // GỬI THAM SỐ TÌM KIẾM
+        if (searchTerm) {
+            params.search_term = searchTerm;
         }
 
         const response = await api.get('/products', { params });
@@ -342,6 +336,124 @@ export const patchSalary = async (salaryId, data) => {
     if (response.status !== 200) throw response.data || { message: 'Lỗi khi cập nhật bảng lương.' };
     return response.data;
 };
+// ... các hàm cũ ...
+
+// CÁC HÀM GỌI API (QUẢN LÝ ĐƠN HÀNG - BỔ SUNG CÁC HÀM THIẾU) 💡
+// ============================================================
+
+export const getOrders = async () => {
+    try {
+        const response = await api.get('/orders');
+        return response.data;
+    } catch (error) {
+        throw error.response?.data || { message: 'Lỗi tải đơn hàng.' };
+    }
+};
+
+export const getOrderById = async (orderId) => {
+    try {
+        const response = await api.get(`/orders/${orderId}`);
+        return response.data;
+    } catch (error) {
+        throw error.response?.data || { message: 'Lỗi tải chi tiết đơn hàng.' };
+    }
+};
+
+/**
+ * Tạo đơn hàng mới. Dùng cho OrderCreateScreen.js
+ * @param {object} orderData - Dữ liệu đơn hàng (customerPhone, employeeId, items, subtotal, ...)
+ */
+export const createOrder = async (orderData) => {
+    try {
+        // Route: POST /api/orders
+        const response = await api.post('/orders', orderData);
+        return response.data;
+    } catch (error) {
+        throw error.response?.data || { message: 'Lỗi khi tạo đơn hàng.' };
+    }
+};
+
+/**
+ * Cập nhật đơn hàng hiện có. Dùng cho OrderEditScreen.js
+ * @param {string} orderId 
+ * @param {object} orderData - Dữ liệu cần cập nhật (items, shippingCost, paymentMethod, ...)
+ */
+export const updateOrder = async (orderId, orderData) => {
+    try {
+        // Route: PATCH /api/orders/:orderId
+        const response = await api.patch(`/orders/${orderId}`, orderData);
+        return response.data;
+    } catch (error) {
+        throw error.response?.data || { message: 'Lỗi khi cập nhật đơn hàng.' };
+    }
+};
+
+
+export const updateOrderStatus = async (orderId, status) => {
+    try {
+        const response = await api.patch(`/orders/${orderId}/status`, { status });
+        return response.data;
+    } catch (error) {
+        throw error.response?.data || { message: 'Lỗi cập nhật trạng thái đơn hàng.' };
+    }
+};
+
+export const updatePaymentStatus = async (orderId, paymentStatus) => {
+    try {
+        // Route: PATCH /api/orders/:orderId/payment-status
+        const response = await api.patch(`/orders/${orderId}/payment-status`, { paymentStatus });
+        return response.data;
+    } catch (error) {
+        throw error.response?.data || { message: 'Lỗi cập nhật trạng thái thanh toán.' };
+    }
+};
+
+
+export const deleteOrder = async (orderId) => {
+    try {
+        const response = await api.delete(`/orders/${orderId}`);
+        return response.data;
+    } catch (error) {
+        throw error.response?.data || { message: 'Lỗi xóa đơn hàng.' };
+    }
+};
+
+// ============================================================
+// CÁC HÀM GỌI API (PRODUCTS/CUSTOMERS CHO MÀN HÌNH TẠO ĐƠN) 💡
+// ============================================================
+
+/**
+ * Tìm kiếm khách hàng theo số điện thoại. Dùng cho OrderCreateScreen.js.
+ * Route: GET /api/customers/phone/:phone
+ * @param {string} phone
+ */
+export const findCustomerByPhone = async (phone) => {
+    try {
+        const response = await api.get(`/customers/phone/${phone}`);
+        // API này cần trả về object { customer: ... } hoặc { ...customer }
+        return response.data; 
+    } catch (error) {
+        throw error.response?.data || { message: 'Lỗi tìm khách hàng.' };
+    }
+};
+
+
+/**
+ * Lấy chi tiết biến thể sản phẩm theo mã Variant Code. Dùng cho OrderCreateScreen.js.
+ * Route: GET /api/variants/:variantCode
+ * @param {string} variantCode
+ */
+export const getVariantByCode = async (variantCode) => {
+    try {
+        // Route: GET /api/variants/:variantCode
+        const response = await api.get(`/variants/${variantCode}`);
+        // API này cần trả về object { variant: {...} } có các trường: product_name, price, stock_quantity, color, size
+        return response.data; 
+    } catch (error) {
+        throw error.response?.data || { message: 'Lỗi tìm biến thể sản phẩm.' };
+    }
+};
+
 
 
 export default api;

@@ -1,4 +1,4 @@
-// /server/index.js
+// /server/index.js ĐÃ SỬA
 require('dotenv').config(); 
 const express = require('express');
 const cors = require('cors');
@@ -9,7 +9,7 @@ require('./config/db.config');
 const authRoutes = require('./routes/authRoutes');
 const productRoutes = require('./routes/productRoutes');
 const customerRoutes = require('./routes/customerRoutes');
-const userRoutes = require('./routes/userRoutes'); // File chứa các chức năng Admin
+const userRoutes = require('./routes/userRoutes'); 
 const stockInRoutes = require('./routes/stockInRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const salaryRoutes = require('./routes/salaryRoutes');
@@ -29,12 +29,11 @@ app.use(express.json());
 
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
-app.use('/api/customers', customerRoutes);
 
-// [QUAN TRỌNG - ĐÃ SỬA]: 
-// Sửa '/api/users' thành '/api' 
-// Vì bên trong userRoutes.js ta đã viết sẵn '/admin/users' và '/users/create'
-// Kết quả ghép lại sẽ là: /api/admin/users/... (Đúng chuẩn Frontend)
+// Ánh xạ /api/customers (bao gồm cả /api/customers/phone/:phone)
+app.use('/api/customers', customerRoutes); 
+
+// Ánh xạ /api (cho /api/admin/users và /api/users/profile)
 app.use('/api', userRoutes); 
 
 app.use('/api/stockin', stockInRoutes);

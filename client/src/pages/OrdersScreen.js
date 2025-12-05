@@ -1,210 +1,386 @@
-// /client/src/pages/OrdersScreen.js
-import React, { useState, useEffect, useMemo } from 'react';
-import { ShoppingCart, Search, Plus, Edit, Trash2, Eye, Zap } from 'lucide-react';
-import { getOrders } from '../services/api';
-import { ROLES } from '../utils/constants';
-import { formatCurrency, normalizeSearchableValue } from '../utils/helpers';
+import React, { useEffect, useState, useMemo } from "react";
+import { Plus, Eye, Edit, Trash2, Truck, Search } from "lucide-react";
+import { getOrders, getOrderById, updateOrderStatus, updatePaymentStatus, deleteOrder } from "../services/api";
 
-export const OrdersScreen = ({ currentUserId, userRoleId }) => {
-  const [orders, setOrders] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
+export const OrdersScreen = ({ setPath, currentUserId, userRoleName }) => {
+    const [orders, setOrders] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
+    
+    const [searchQuery, setSearchQuery] = useState("");
+    const [filterChannel, setFilterChannel] = useState('all'); 
 
-  // ======= ROLE CHECK =======
-  const isOwner = userRoleId === ROLES.OWNER.id;
-  const isDirectSales = userRoleId === ROLES.SALES.id;
-  const isOnlineSales = userRoleId === ROLES.ONLINE_SALES.id;
-  const isShipper = userRoleId === ROLES.SHIPPER.id;
+    const [orderDetails, setOrderDetails] = useState(null);
+    const [showDetails, setShowDetails] = useState(false);
 
-  // Kênh được phép xem
-  const restrictedChannel = isDirectSales ? 'Direct' : isOnlineSales ? 'Online' : 'all';
+    const [showStatusModal, setShowStatusModal] = useState(false);
+    const [statusUpdateData, setStatusUpdateData] = useState(null); 
 
-  // ======= FILTER STATE =======
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [filterChannel, setFilterChannel] = useState(restrictedChannel);
-  const [searchTerm, setSearchTerm] = useState('');
+    const ORDER_STATUSES = ["Đang Xử Lý", "Đang Giao", "Hoàn Thành", "Đã Hủy"];
+    const PAYMENT_STATUSES = ["Chưa Thanh Toán", "Đã Thanh Toán", "Đã Hoàn Tiền"];
 
-  // ======= PERMISSIONS =======
-  const canCreateEditOrder = isOwner || isDirectSales || isOnlineSales;
-  const canUpdateStatus = isOwner || isDirectSales || isOnlineSales || isShipper;
-  const canCancel = isOwner;
-
-  // ======= FETCH ORDERS =======
-  const fetchOrders = async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const data = await getOrders();
-      setOrders(data);
-    } catch (err) {
-      console.error(err);
-      setError('Không thể tải dữ liệu đơn hàng từ server.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchOrders();
-  }, []);
-
-  useEffect(() => {
-    if (restrictedChannel !== 'all' && filterChannel !== restrictedChannel) {
-      setFilterChannel(restrictedChannel);
-    }
-  }, [restrictedChannel, filterChannel]);
-
-  // ======= FILTER LOGIC =======
-  const filteredOrders = useMemo(() => {
-    const lower = normalizeSearchableValue(searchTerm);
-
-    return orders.filter(o => {
-      const statusMatch = filterStatus === 'all' || o.status === filterStatus;
-      const channelMatch =
-        restrictedChannel === 'all'
-          ? filterChannel === 'all' || o.orderType === filterChannel
-          : o.orderType === restrictedChannel;
-      const shipperMatch = !isShipper || o.shipper_user_id === currentUserId;
-
-      if (!statusMatch || !channelMatch || !shipperMatch) return false;
-
-      if (!searchTerm) return true;
-
-      return Object.values(o).some(v => {
-        if (typeof v === 'object') return false;
-        return normalizeSearchableValue(v).includes(lower);
-      });
-    });
-  }, [orders, filterStatus, filterChannel, searchTerm, restrictedChannel, isShipper, currentUserId]);
-
-  // ======= BADGES =======
-  const getStatusBadge = (status) => {
-    const base = "px-2 py-1 rounded-full text-xs font-semibold";
-    const map = {
-      Pending: "bg-yellow-100 text-yellow-700",
-      Processing: "bg-blue-100 text-blue-700",
-      Shipping: "bg-purple-100 text-purple-700",
-      Completed: "bg-green-100 text-green-700",
-      Cancelled: "bg-red-100 text-red-700"
+    const rolePermissions = {
+        'Owner':        { canCreate: true, canEdit: true, canDelete: true, canUpdateStatus: true, canView: true },
+        'Sales':        { canCreate: true, canEdit: true, canDelete: false, canUpdateStatus: false, canView: true },
+        'Online Sales': { canCreate: true, canEdit: true, canDelete: false, canApprove: false, canUpdateStatus: true, canView: true },
+        'Warehouse':    { canCreate: false, canEdit: false, canDelete: false, canApprove: false, canUpdateStatus: false, canView: true },
+        'Shipper':      { canCreate: false, canEdit: false, canDelete: false, canApprove: false, canUpdateStatus: true, canView: true },
     };
-    return <span className={`${base} ${map[status] || "bg-gray-100 text-gray-600"}`}>{status}</span>;
-  };
+    const currentPermissions = rolePermissions[userRoleName] || { canCreate: false, canEdit: false, canDelete: false, canApprove: false, canUpdateStatus: false, canView: false };
 
-  const getChannelBadge = (channel) => {
-    const base = "px-2 py-1 rounded-full text-xs font-semibold";
-    const color = channel === 'Online' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700';
-    return <span className={`${base} ${color}`}>{channel}</span>;
-  };
+    const fetchOrders = async () => {
+        setLoading(true);
+        try {
+            const data = await getOrders(); 
+            setOrders(data);
+        } catch (err) {
+            console.error("Error loading orders:", err);
+            alert("Lỗi tải danh sách đơn hàng: " + err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
 
-  // ======= ACTION HANDLERS =======
-  const handleViewDetail = (order) => alert('Xem chi tiết đơn ' + order.id);
-  const handleEditOrder = (order) => { if (canCreateEditOrder) alert('Chỉnh sửa đơn ' + order.id); };
-  const handleDeleteOrder = (order) => { if (canCancel && window.confirm(`Xóa đơn ${order.id}?`)) alert('Đã xóa (placeholder)'); };
-  const handleUpdateStatus = (order) => { if (canUpdateStatus) alert('Cập nhật trạng thái ' + order.id); };
+    const openStatusModal = (orderId, currentValue, statusType) => {
+        if (!currentPermissions.canUpdateStatus) {
+            return alert("Bạn không có quyền cập nhật trạng thái.");
+        }
+        
+        const options = statusType === 'order' ? ORDER_STATUSES : PAYMENT_STATUSES;
+        setStatusUpdateData({ orderId, currentValue, statusType, options });
+        setShowStatusModal(true);
+    };
 
-  // ======= RENDER =======
-  if (isLoading) return <p className="p-6 text-center">Đang tải dữ liệu...</p>;
-  if (error) return <p className="p-6 text-center text-red-600">{error}</p>;
+    const handleModalStatusConfirm = async (newStatus) => {
+        if (!statusUpdateData || newStatus === statusUpdateData.currentValue) {
+            setShowStatusModal(false);
+            return;
+        }
 
-  return (
-    <div className="space-y-6 p-4 md:p-6">
-      <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-        <ShoppingCart /> Quản lý Đơn hàng
-      </h1>
+        const isOrderUpdate = statusUpdateData.statusType === 'order';
+        const updateFunction = isOrderUpdate ? updateOrderStatus : updatePaymentStatus;
+        const payload = newStatus;
 
-      <div className="bg-white rounded-xl shadow-lg p-4">
-        {/* FILTERS */}
-        <div className="flex flex-wrap gap-3 mb-4 items-center">
-          {/* Search */}
-          <div className="flex items-center border rounded-lg px-3 py-2">
-            <Search size={18} className="text-gray-500" />
-            <input
-              type="text"
-              placeholder="Tìm kiếm..."
-              className="ml-2 outline-none"
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-            />
-          </div>
+        try {
+            await updateFunction(statusUpdateData.orderId, payload);
+            
+            alert(`Cập nhật trạng thái ${isOrderUpdate ? 'ĐƠN HÀNG' : 'THANH TOÁN'} thành công: ${newStatus}!`);
+            setShowStatusModal(false);
+            setRefreshTrigger(prev => prev + 1);
+        } catch (err) {
+            alert("Lỗi cập nhật trạng thái: " + err.message);
+            setShowStatusModal(false);
+        }
+    };
 
-          {/* Status filter */}
-          <select
-            className="border rounded-lg px-3 py-2"
-            value={filterStatus}
-            onChange={e => setFilterStatus(e.target.value)}
-          >
-            <option value="all">Tất cả trạng thái</option>
-            <option value="Pending">Pending</option>
-            <option value="Processing">Processing</option>
-            <option value="Shipping">Shipping</option>
-            <option value="Completed">Completed</option>
-            <option value="Cancelled">Cancelled</option>
-          </select>
+    const handleUpdateStatusClick = (orderId, currentStatus) => {
+        openStatusModal(orderId, currentStatus, 'order');
+    };
 
-          {/* Channel filter */}
-          {restrictedChannel === 'all' && (
-            <select
-              className="border rounded-lg px-3 py-2"
-              value={filterChannel}
-              onChange={e => setFilterChannel(e.target.value)}
-            >
-              <option value="all">Tất cả kênh</option>
-              <option value="Direct">Bán trực tiếp</option>
-              <option value="Online">Bán online</option>
-            </select>
-          )}
+    const handlePaymentStatusClick = (orderId, currentPaymentStatus) => {
+        openStatusModal(orderId, currentPaymentStatus, 'payment');
+    };
 
-          {/* New Order button */}
-          {canCreateEditOrder && (
-            <button className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700">
-              <Plus size={18} /> Tạo Đơn mới
-            </button>
-          )}
+
+    const handleViewDetails = async (orderId) => {
+        try {
+            const data = await getOrderById(orderId); 
+            setOrderDetails(data);
+            setShowDetails(true);
+        } catch (err) {
+            alert("Lỗi tải chi tiết đơn hàng: " + err.message);
+        }
+    };
+    
+    const handleEdit = (orderId) => { 
+        // ĐIỂM SỬA 1: Kiểm tra an toàn trước khi điều hướng
+        if (typeof setPath === 'function') {
+            setPath(`/orders/${orderId}/edit`);
+        } else { console.error("Lỗi điều hướng: setPath không phải là hàm hoặc không được truyền."); }
+    };
+    
+    const handleDelete = async (orderId) => {
+        if (!currentPermissions.canDelete && userRoleName !== 'Owner') return alert("Bạn không có quyền xóa đơn hàng này.");
+        if (!window.confirm(`Bạn chắc chắn muốn xóa đơn hàng ${orderId}? Hành động này sẽ hoàn lại tồn kho.`)) return;
+
+        try {
+            await deleteOrder(orderId);
+            alert("Đã xóa đơn hàng thành công!");
+            setRefreshTrigger(prev => prev + 1);
+        } catch (err) {
+            alert("Lỗi xóa đơn hàng: " + err.message);
+        }
+    };
+    
+    const filteredOrders = useMemo(() => {
+        let list = orders;
+        const query = searchQuery.toLowerCase();
+        if (filterChannel !== 'all') {
+            list = list.filter(o => o.orderChannel === filterChannel);
+        }
+        if (query) {
+            list = list.filter(o => 
+                o.id.toLowerCase().includes(query) ||
+                (o.customerName && o.customerName.toLowerCase().includes(query))
+            );
+        }
+        return list;
+    }, [orders, searchQuery, filterChannel]);
+
+    useEffect(() => {
+        fetchOrders();
+    }, [refreshTrigger]);
+
+    if (loading)
+        return (
+            <p className="p-6 text-center text-xl">Đang tải đơn hàng...</p>
+        );
+
+    return (
+        <div className="space-y-6 p-4 md:p-6">
+            {/* HEADER */}
+            <div className="flex justify-between items-center">
+                <div>
+                    <h1 className="text-3xl font-bold">Quản lý Đơn hàng</h1>
+                    <p className="text-sm text-gray-600 mt-1">Vai trò: <span className="font-semibold">{userRoleName}</span></p>
+                </div>
+
+                <div className="flex gap-2">
+                    <button
+                        onClick={() => setRefreshTrigger(prev => prev + 1)}
+                        className="bg-gray-600 text-white px-4 py-2 rounded-lg shadow hover:bg-gray-700"
+                    >
+                        🔄 Làm mới
+                    </button>
+                    {currentPermissions.canCreate && (
+                        <button
+                            onClick={() => {
+                                // ĐIỂM SỬA 2: Kiểm tra an toàn trước khi điều hướng
+                                if (typeof setPath === 'function') {
+                                    setPath("/orders/create");
+                                } else {
+                                    console.error("Lỗi điều hướng: setPath không phải là hàm.");
+                                }
+                            }}
+                            className="bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700 flex items-center gap-2"
+                        >
+                            <Plus size={18} />
+                            Tạo đơn hàng
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {/* BỘ LỌC VÀ TÌM KIẾM (Giữ nguyên) */}
+            <div className="flex flex-col md:flex-row gap-4">
+                <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                    <input
+                        type="text"
+                        placeholder="Tìm theo Mã đơn, Tên khách hàng..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full p-2 pl-10 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                    />
+                </div>
+                
+                <select
+                    value={filterChannel}
+                    onChange={(e) => setFilterChannel(e.target.value)}
+                    className="p-2 border border-gray-300 rounded-lg w-full md:w-48"
+                >
+                    <option value="all">-- Tất cả Kênh bán hàng --</option>
+                    <option value="Trực tiếp">Trực tiếp</option>
+                    <option value="Online">Online</option>
+                </select>
+            </div>
+
+
+            {/* TABLE (Giữ nguyên) */}
+            <div className="bg-white p-4 rounded-xl shadow-md overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                        <tr>
+                            <th className="px-6 py-3 text-left font-medium">Mã đơn</th>
+                            <th className="px-6 py-3 text-left font-medium">Khách hàng</th>
+                            <th className="px-6 py-3 text-left font-medium">Kênh bán</th>
+                            <th className="px-6 py-3 text-left font-medium">Ngày đặt</th>
+                            <th className="px-6 py-3 text-left font-medium">Tổng thanh toán</th> 
+                            <th className="px-6 py-3 text-left font-medium">TT Đơn hàng</th>
+                            <th className="px-6 py-3 text-left font-medium">TT Thanh toán</th>
+                            <th className="px-6 py-3 text-right font-medium">Hành động</th>
+                        </tr>
+                    </thead>
+
+                    <tbody className="divide-y divide-gray-100">
+                        {filteredOrders.map((o) => {
+                            const isOwner = userRoleName === 'Owner';
+                            const showEditDelete = (o.status === 'Đang Xử Lý') || (isOwner && o.status !== 'Đã Hủy');
+                            
+                            return (
+                            <tr key={o.id} className="hover:bg-gray-50">
+
+                                {/* Dữ liệu cột (Giữ nguyên) */}
+                                <td className="px-6 py-4 text-blue-600 font-semibold">{o.id}</td>
+                                <td className="px-6 py-4">{o.customerName}</td>
+                                <td className="px-6 py-4">{/* Kênh bán */}
+                                    <span className={`px-2 py-1 rounded text-xs font-medium ${o.orderChannel === 'Online' ? 'bg-indigo-100 text-indigo-800' : 'bg-gray-200 text-gray-800'}`}>
+                                        {o.orderChannel}
+                                    </span>
+                                </td>
+                                <td className="px-6 py-4 text-sm">{o.orderDate ? new Date(o.orderDate).toLocaleDateString('vi-VN') : 'N/A'}</td>
+                                <td className="px-6 py-4 font-semibold">{Number(o.totalAmount).toLocaleString()} đ</td>
+                                
+                                {/* CỘT TRẠNG THÁI ĐƠN HÀNG (CLICKABLE) */}
+                                <td 
+                                    className="px-6 py-4 cursor-pointer"
+                                    onClick={() => handleUpdateStatusClick(o.id, o.status)}
+                                >
+                                    <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                                        o.status === 'Hoàn Thành' ? 'bg-green-100 text-green-800' :
+                                        o.status === 'Đang Giao' ? 'bg-blue-100 text-blue-800' :
+                                        o.status === 'Đang Xử Lý' ? 'bg-yellow-100 text-yellow-800' :
+                                        'bg-red-100 text-red-800'
+                                    }`}>
+                                        {o.status}
+                                    </span>
+                                </td>
+                                
+                                {/* CỘT TRẠNG THÁI THANH TOÁN (CLICKABLE) */}
+                                <td 
+                                    className="px-6 py-4 cursor-pointer"
+                                    onClick={() => handlePaymentStatusClick(o.id, o.paymentStatus)}
+                                >
+                                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                                        o.paymentStatus === 'Đã Thanh Toán' ? 'bg-green-100 text-green-700' : 'bg-red-50 text-red-700'
+                                    }`}>
+                                        {o.paymentStatus}
+                                    </span>
+                                </td>
+
+                                {/* Nút hành động */}
+                                <td className="px-6 py-4 text-right flex gap-2 justify-end">
+                                    
+                                    {/* 1. NÚT XEM (VIEW) */}
+                                    <button
+                                        onClick={() => handleViewDetails(o.id)}
+                                        className="text-blue-600 hover:text-blue-800 p-2 rounded-lg hover:bg-blue-50"
+                                        title="Xem chi tiết"
+                                    > <Eye size={20} /> </button>
+                                    
+                                    {/* 2. NÚT SỬA (EDIT) */}
+                                    {currentPermissions.canEdit && showEditDelete && (
+                                        <button
+                                            onClick={() => handleEdit(o.id)}
+                                            className="text-indigo-600 hover:text-indigo-800 p-2 rounded-lg hover:bg-indigo-50"
+                                            title="Sửa"
+                                        > <Edit size={20} /> </button>
+                                    )}
+                                    
+                                    {/* 3. NÚT XÓA (DELETE) */}
+                                    {currentPermissions.canDelete && showEditDelete && (
+                                        <button
+                                            onClick={() => handleDelete(o.id)}
+                                            className="text-red-600 hover:text-red-800 p-2 rounded-lg hover:bg-red-50"
+                                            title="Xóa"
+                                        > <Trash2 size={20} /> </button>
+                                    )}
+                                    
+                                    {/* 4. NÚT CẬP NHẬT GIAO HÀNG (TRUCK) */}
+                                    {currentPermissions.canUpdateStatus && o.status !== 'Hoàn Thành' && o.status !== 'Đã Hủy' && (
+                                        <button
+                                            onClick={() => handleUpdateStatusClick(o.id, o.status)}
+                                            className="text-green-600 hover:text-green-800 p-2 rounded-lg hover:bg-green-50"
+                                            title="Cập nhật trạng thái giao"
+                                        > <Truck size={20} /> </button>
+                                    )}
+                                </td>
+
+                            </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+
+                {filteredOrders.length === 0 && (
+                    <p className="text-center py-4 text-gray-500">
+                        Không tìm thấy đơn hàng nào khớp với tiêu chí lọc.
+                    </p>
+                )}
+            </div>
+
+            {/* MODAL CẬP NHẬT TRẠNG THÁI (Giữ nguyên) */}
+            {showStatusModal && statusUpdateData && (
+                <StatusUpdateModal 
+                    data={statusUpdateData} 
+                    onConfirm={handleModalStatusConfirm} 
+                    onClose={() => setShowStatusModal(false)}
+                />
+            )}
+            
+            {/* ORDER DETAILS MODAL (Giữ nguyên) */}
+            {showDetails && orderDetails && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-lg shadow-2xl p-6 w-full max-w-2xl overflow-y-auto max-h-[90vh]">
+                        <h3 className="text-2xl font-bold mb-4">Chi tiết Đơn hàng {orderDetails.id}</h3>
+                        <p>Kênh bán: **{orderDetails.orderChannel}** | Trạng thái: **{orderDetails.status}**</p>
+                        <p>Tổng tiền: **{Number(orderDetails.finalTotal).toLocaleString()} đ**</p>
+                        
+                        <h4 className="text-xl font-semibold mt-4 mb-2">Sản phẩm:</h4>
+                        <ul className="list-disc pl-5">
+                            {orderDetails.items && orderDetails.items.map((item, index) => (
+                                <li key={index}>
+                                    {item.product_name} ({item.color}/{item.size}) - SL: {item.quantity} x {Number(item.price_at_order).toLocaleString()} đ
+                                </li>
+                            ))}
+                            {(!orderDetails.items || orderDetails.items.length === 0) && <li>Không có sản phẩm.</li>}
+                        </ul>
+
+                        <div className="flex justify-end mt-6">
+                            <button onClick={() => setShowDetails(false)} className="px-4 py-2 bg-gray-600 text-white rounded-lg">Đóng</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
+    );
+};
 
-        {/* TABLE */}
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-3 py-3 text-left text-xs">Mã</th>
-                <th className="px-3 py-3 text-left text-xs">Khách hàng</th>
-                <th className="px-3 py-3 text-left text-xs">NV lập đơn</th>
-                <th className="px-3 py-3 text-left text-xs">Ngày lập</th>
-                <th className="px-3 py-3 text-left text-xs">Tổng tiền</th>
-                <th className="px-3 py-3 text-left text-xs">Kênh</th>
-                <th className="px-3 py-3 text-left text-xs">Trạng thái</th>
-                <th className="px-3 py-3 text-right text-xs">Hành động</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {filteredOrders.map(o => {
-                const showUpdateBtn = canUpdateStatus && o.status !== 'Completed' && o.status !== 'Cancelled';
-                return (
-                  <tr key={o.id} className="hover:bg-gray-50">
-                    <td className="px-3 py-4">{o.id}</td>
-                    <td className="px-3 py-4">{o.customerName}</td>
-                    <td className="px-3 py-4">{o.staffName}</td>
-                    <td className="px-3 py-4">{new Date(o.orderDate).toLocaleDateString('vi-VN')}</td>
-                    <td className="px-3 py-4 text-red-600 font-semibold">{formatCurrency(o.totalAmount)}</td>
-                    <td className="px-3 py-4">{getChannelBadge(o.orderType)}</td>
-                    <td className="px-3 py-4">{getStatusBadge(o.status)}</td>
+// ... (StatusUpdateModal component giữ nguyên)
 
-                    {/* ACTIONS */}
-                    <td className="px-3 py-4 text-right flex justify-end gap-2">
-                      <button onClick={() => handleViewDetail(o)} className="p-2 rounded-full  hover:bg-blue-100 text-black-600"><Eye size={18} /></button>
-                      {canCreateEditOrder && <button onClick={() => handleEditOrder(o)} className="p-2 rounded-full hover:bg-blue-100  text-blue-800"><Edit size={18} /></button>}
-                      {showUpdateBtn && <button onClick={() => handleUpdateStatus(o)} className="p-2 rounded-full hover:bg-blue-100  text-yellow-600"><Zap size={18} /></button>}
-                      {canCancel && <button onClick={() => handleDeleteOrder(o)} className="p-2 rounded-full  hover:bg-blue-100  text-red-600"><Trash2 size={18} /></button>}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-          {filteredOrders.length === 0 && <p className="text-center py-8 text-gray-500">Không tìm thấy đơn hàng nào.</p>}
+const StatusUpdateModal = ({ data, onConfirm, onClose }) => {
+    const [selectedStatus, setSelectedStatus] = useState(data.currentValue);
+    const title = data.statusType === 'order' ? 'ĐƠN HÀNG' : 'THANH TOÁN';
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-2xl p-6 w-full max-w-sm">
+                <h3 className="text-xl font-bold mb-4">Cập nhật trạng thái {title}</h3>
+                <p className="mb-2 text-sm text-gray-600">Đơn hàng: **{data.orderId}**</p>
+                
+                <select
+                    value={selectedStatus}
+                    onChange={(e) => setSelectedStatus(e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded-lg mb-4 text-base"
+                >
+                    {data.options.map(status => (
+                        <option key={status} value={status}>
+                            {status} {status === data.currentValue ? '(Hiện tại)' : ''}
+                        </option>
+                    ))}
+                </select>
+
+                <div className="flex justify-end gap-3">
+                    <button onClick={onClose} className="px-4 py-2 bg-gray-200 rounded-lg">Hủy</button>
+                    <button 
+                        onClick={() => onConfirm(selectedStatus)} 
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg"
+                        disabled={selectedStatus === data.currentValue}
+                    >
+                        Xác nhận
+                    </button>
+                </div>
+            </div>
         </div>
-      </div>
-    </div>
-  );
+    );
 };

@@ -97,19 +97,17 @@ CREATE TABLE products (
     category_id INT UNSIGNED NULL,
     description TEXT NULL,
     brand VARCHAR(100),
+    material VARCHAR(255) NULL, -- Đã đưa vào đây
     base_price DECIMAL(18,2) NOT NULL,
     cost_price DECIMAL(18,2) NOT NULL,
     is_active BOOLEAN DEFAULT TRUE,
-
     avg_rating FLOAT DEFAULT 0,
     review_count INT DEFAULT 0,
-
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
     FOREIGN KEY (category_id) REFERENCES categories(category_id) ON DELETE SET NULL
 );
-ALTER TABLE products ADD COLUMN material VARCHAR(255) NULL AFTER brand;
+-- XÓA DÒNG: ALTER TABLE products ADD COLUMN material...
 CREATE TABLE product_variants (
     variant_id VARCHAR(25) PRIMARY KEY,
     product_id VARCHAR(20) NOT NULL,
@@ -202,23 +200,40 @@ CREATE TABLE stock_in_details (
     FOREIGN KEY (variant_id) REFERENCES product_variants(variant_id) ON DELETE RESTRICT
 );
 
-SET FOREIGN_KEY_CHECKS = 1;
--- tăng khi nhập hàng --
+CREATE TABLE `cart` (
+  `cart_id` INT AUTO_INCREMENT PRIMARY KEY,
+  `user_id` VARCHAR(15) NOT NULL,
+  `variant_id` VARCHAR(25) NOT NULL,
+  `quantity` INT NOT NULL DEFAULT 1,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`user_id`) REFERENCES `users`(`user_id`) ON DELETE CASCADE,
+  FOREIGN KEY (`variant_id`) REFERENCES `product_variants`(`variant_id`) ON DELETE CASCADE,
+  UNIQUE(`user_id`, `variant_id`) -- Một user chỉ có 1 dòng cho 1 sản phẩm trong giỏ
+);
+-- ... (Các lệnh INSERT dữ liệu mẫu ở trên) ...
+
+-- 3. Cập nhật dữ liệu tồn kho chuẩn dựa trên Nhập - Xuất
+-- Công thức: Tồn kho = Tổng nhập - Tổng xuất (trong đơn hàng chưa hủy)
+UPDATE product_variants v
+SET stock_quantity = (
+    IFNULL((SELECT SUM(quantity) FROM stock_in_details WHERE variant_id = v.variant_id), 0)
+    - 
+    IFNULL((SELECT SUM(od.quantity) 
+            FROM order_details od
+            JOIN orders o ON od.order_id = o.order_id
+            WHERE od.variant_id = v.variant_id 
+            AND o.status <> 'Đã Hủy'), 0) -- Chỉ trừ hàng nếu đơn chưa hủy
+);
+
+-- ================================================================
+-- TẠO TRIGGER (ĐƯA XUỐNG CUỐI CÙNG ĐỂ KHÔNG CHẠY KHI ĐANG SEED DATA)
+-- ================================================================
+
 DELIMITER //
 
-CREATE TRIGGER trg_stock_in_add
-AFTER INSERT ON stock_in_details
-FOR EACH ROW
-BEGIN
-    UPDATE product_variants
-    SET stock_quantity = stock_quantity + NEW.quantity
-    WHERE variant_id = NEW.variant_id;
-END //
 
-DELIMITER ;
--- giảm khi bán --
-DELIMITER //
-
+-- Trigger giảm kho khi bán hàng
+DROP TRIGGER IF EXISTS trg_order_details_add //
 CREATE TRIGGER trg_order_details_add
 AFTER INSERT ON order_details
 FOR EACH ROW
@@ -228,26 +243,36 @@ BEGIN
     WHERE variant_id = NEW.variant_id;
 END //
 
-DELIMITER ;
--- hoàn tồn khi đơn hủy --
-DELIMITER //
-
+-- Trigger hoàn tồn khi đơn hủy
+DROP TRIGGER IF EXISTS trg_order_cancel_return_stock //
 CREATE TRIGGER trg_order_cancel_return_stock
 AFTER UPDATE ON orders
 FOR EACH ROW
 BEGIN
-    -- Chỉ thực thi khi đổi trạng thái sang "Đã Hủy"
     IF NEW.status = 'Đã Hủy' AND OLD.status <> 'Đã Hủy' THEN
-        
         UPDATE product_variants pv
         JOIN order_details od ON od.variant_id = pv.variant_id
         SET pv.stock_quantity = pv.stock_quantity + od.quantity
         WHERE od.order_id = NEW.order_id;
-
     END IF;
 END //
 
+-- Trigger hoàn tồn khi xóa chi tiết đơn (sửa đơn)
+DROP TRIGGER IF EXISTS trg_order_details_delete //
+CREATE TRIGGER trg_order_details_delete
+AFTER DELETE ON order_details
+FOR EACH ROW
+BEGIN
+    UPDATE product_variants
+    SET stock_quantity = stock_quantity + OLD.quantity
+    WHERE variant_id = OLD.variant_id;
+END //
+
 DELIMITER ;
+
+
+SET FOREIGN_KEY_CHECKS = 1;
+
 
 -- Dữ liệu mẫu tối thiểu cho roles
 INSERT IGNORE INTO `roles` (`role_id`, `role_name`, `prefix`, `description`) VALUES
@@ -1878,8 +1903,7 @@ INSERT INTO customers (customer_id, user_id, full_name, email, phone, address, c
 ('CUS199', 'US199', 'Nguyễn Thị Bình', 'nguyễnthibinh@example.com', '0900000199', '59 Nguyễn Trãi, Hà Nội', '2024-11-19', '2024-11-19'),
 ('CUS200', 'US200', 'Lê Thị Hạnh', 'lethihanh@example.com', '0900000200', '73 Trần Hưng Đạo, Hà Nội', '2024-11-20', '2024-11-20');
 
--- Bật lại kiểm tra khóa ngoại
--- 1. Thêm cột full_name vào bảng users
+
 UPDATE product_variants v
 SET stock_quantity = (
     IFNULL((SELECT SUM(quantity) FROM stock_in_details WHERE variant_id = v.variant_id), 0)

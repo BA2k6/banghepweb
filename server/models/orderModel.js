@@ -7,14 +7,17 @@ const orderModel = {
                 o.order_id AS id, 
                 c.full_name AS customerName,
                 o.final_total AS totalAmount, 
+                o.subtotal, 
+                o.shipping_cost, 
                 o.status AS status, 
-                o.order_channel AS orderType,
+                o.payment_status AS paymentStatus, 
+                o.order_channel AS orderChannel, 
                 o.delivery_staff_id AS shipperUserId,
-                e.full_name AS staffName,
+                es.full_name AS staffName, /* Nhân viên bán hàng/tạo đơn */
                 DATE_FORMAT(o.order_date, '%Y-%m-%d %H:%i:%s') AS orderDate
             FROM orders o
             LEFT JOIN customers c ON o.customer_id = c.customer_id
-            LEFT JOIN employees e ON o.staff_id = e.user_id
+            LEFT JOIN employees es ON o.staff_id = es.user_id /* Đổi alias thành es */
             ORDER BY o.order_date DESC;
         `;
         try {
